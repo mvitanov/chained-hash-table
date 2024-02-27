@@ -247,8 +247,10 @@ void printHashTable(struct ChainedHashTable* cht) {
     }
 }
 
- 
-int main(int argc, char **argv) {
+/*
+ * Helper method to retrieve the Hash table size from the cmd options
+ */
+int getTableSize(int argc, char **argv) {
     int long_option;
     char *opt_value = NULL;
     static struct option long_options[] = {
@@ -277,32 +279,16 @@ int main(int argc, char **argv) {
     }
 
     // Convert the size argument to an integer
-    int table_size = atoi(opt_value);
-    
-    // Initialize the hash table
-    struct ChainedHashTable* cht = initializeHashTable(table_size);
+    return atoi(opt_value);
+}
 
-    char previous_content[SHM_SIZE];
-    int shm_id;
-    char *shm;  
-  
-    /*
-     * Shared memory segment at 3723909
-     */
-    key_t shm_key = 37239092;
-  
-    
-    if ((shm_id = shmget(shm_key, SHM_SIZE, IPC_CREAT | 0644)) < 0) {
-        perror("Could not create a shared memory segment!");
-        exit(EXIT_FAILURE);
-    }
-  
-    if ((shm = shmat(shm_id, NULL, 0)) == (char *) -1) {
-        perror("Attaching the memory segment to the data space failed!");
-        exit(EXIT_FAILURE);
-    }
-
+/*
+ * Listening for incoming client requests
+ * Parsing and executing the requests found
+ */
+void startListening(struct ChainedHashTable* cht, char* shm) {
     // in case there is something in the shared memory in the beginning -> ignore it
+    char previous_content[SHM_SIZE];
     strcpy(previous_content, shm);
   
     while (*shm != 'q'){
@@ -383,7 +369,7 @@ int main(int argc, char **argv) {
     
             if(*operation == 'g') {
                 void* result = get(cht, key, strlen(key) + 1);
-                printf("Result is: %s", (char*) result);
+                printf("Result is: %s\n", (char*) result);
             } else {
                 delete(cht, key, strlen(key) + 1);
             }
@@ -399,6 +385,35 @@ int main(int argc, char **argv) {
         printHashTable(cht);
         free(operation);
     }
+}
+ 
+int main(int argc, char **argv) {
+
+    int table_size = getTableSize(argc, argv);
+    
+    // Initialize the hash table
+    struct ChainedHashTable* cht = initializeHashTable(table_size);
+
+    int shm_id;
+    char *shm;  
+  
+    /*
+     * Shared memory segment at 3723909
+     */
+    key_t shm_key = 37239092;
+  
+    
+    if ((shm_id = shmget(shm_key, SHM_SIZE, IPC_CREAT | 0644)) < 0) {
+        perror("Could not create a shared memory segment!");
+        exit(EXIT_FAILURE);
+    }
+  
+    if ((shm = shmat(shm_id, NULL, 0)) == (char *) -1) {
+        perror("Attaching the memory segment to the data space failed!");
+        exit(EXIT_FAILURE);
+    }
+
+    startListening(cht, shm);
 
     freeHashTable(cht);
   
