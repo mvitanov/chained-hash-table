@@ -6,6 +6,9 @@
 #include <string.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <semaphore.h>
+#include <errno.h>
   
 /* 
  * 4KB shared memory segment
@@ -14,6 +17,11 @@
  * will be cut and only the first 4KB will be used!!!
  */
 #define SHM_SIZE 4096 
+
+/*
+ * Name of the semaphore used to sync the writing to the shm
+ */
+#define SERVER_SEM_NAME "/chained_hash_table.sem"
 
 /*
  * Structure for each node in the linked list used to implement a chained hash table
@@ -283,10 +291,57 @@ int getTableSize(int argc, char **argv) {
 }
 
 /*
+ * Initializes or opens the semaphore with value 1 and read/write permissions for owner
+ */
+sem_t* createOrOpenNamedSemaphore() {
+    sem_t *named_sem = sem_open(SERVER_SEM_NAME, O_CREAT, S_IRUSR | S_IWUSR, 1);
+    if (named_sem == SEM_FAILED) {
+        perror("ATTENTION: Named semaphiore cannot be initialized!");
+        exit(EXIT_FAILURE);
+    }
+    return named_sem;
+}
+
+/*
+ * Release the semaphore (such that other client can write in the shared memory) 
+ */
+void releaseNamedSemaphore(sem_t *named_sem) {
+    if (sem_post(named_sem) == -1) {
+        perror("ATTENTION: Error executiong sem_post on the named semaphore!");
+        exit(EXIT_FAILURE);
+    }
+} 
+
+/*
+ *  Helper function to close the named semaphore
+ */
+void closeNamedSemaphore(sem_t *named_sem) {
+    if (sem_close(named_sem) == -1) {
+        perror("ATTENTION: Error when closing the semaphore!");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
+ * Destroy the named semaphore once all other processes 
+ * that have the semaphore open close it
+ */
+void unlinkNamedSemaphore(sem_t *named_sem) {
+    if (sem_unlink(SERVER_SEM_NAME) == -1) {
+        perror("ATTENTION: Error when unlinking the semaphore!");
+        exit(EXIT_FAILURE);
+    }
+}
+
+/*
  * Listening for incoming client requests
  * Parsing and executing the requests found
  */
 void startListening(struct ChainedHashTable* cht, char* shm) {
+    // create named semapthore to be able to sync different processes accessing the shm
+    // alternative: use unnamed semaphore and store it in another shm to be accessible by all processes
+    sem_t *named_sem = createOrOpenNamedSemaphore();
+
     // in case there is something in the shared memory in the beginning -> ignore it
     char previous_content[SHM_SIZE];
     strcpy(previous_content, shm);
@@ -294,6 +349,7 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
     while (*shm != 'q'){
         //sleep(1);
         if(strcmp(shm, previous_content) == 0) {
+            // nothing is written in the shm by client
             continue;
         }
         strcpy(previous_content, shm);
@@ -309,6 +365,7 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
         char *operation_end = strchr(cmd, '\n');
         if(operation_end == NULL) {
             fprintf(stderr, "Invalid operation: %s", cmd);
+            releaseNamedSemaphore(named_sem);
             continue;
         } 
         
@@ -324,6 +381,7 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
             char *key_end = strchr(key_value_string, '\n');
             if(key_end == NULL) {
                 fprintf(stderr, "Invalid key: %s", cmd);
+                releaseNamedSemaphore(named_sem);
                 continue;
             } 
 
@@ -338,13 +396,17 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
             char *value = ++key_end;
             if(value == NULL) {
                 fprintf(stderr, "Invalid value in command: %s", cmd);
+                releaseNamedSemaphore(named_sem);
                 continue;
             }
-            fprintf(stdout, "value: %s\n", value);
-            fprintf(stdout, "keyLength: %zu\n", key_size);
-            fprintf(stdout, "valueLength: %lu\n", strlen(value));
-            insert(cht, key, value, key_size, strlen(value) + 1);
 
+            /* Comment out for debugging */
+            // fprintf(stdout, "value: %s\n", value);
+            // fprintf(stdout, "keyLength: %zu\n", key_size);
+            // fprintf(stdout, "valueLength: %lu\n", strlen(value));
+
+            insert(cht, key, value, key_size, strlen(value) + 1);
+            sleep(5);
             free(key);
         } else if (strcmp(operation, "g") == 0 || strcmp(operation, "d") == 0) {
             // retrieve key
@@ -353,6 +415,7 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
             int shouldFree = 0;
             if(key_end == NULL && key_value_string == NULL) {
                 fprintf(stderr, "Invalid key in command: %s", cmd);
+                releaseNamedSemaphore(named_sem);
                 continue;
             } else if(key_end == NULL) {
                 key = key_value_string;
@@ -379,12 +442,19 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
             }
         } else {
             fprintf(stderr, "Invalid command: %s", cmd);
+            releaseNamedSemaphore(named_sem);
             continue;
         }
 
+        /* Comment out for debugging */
         printHashTable(cht);
+
         free(operation);
+        releaseNamedSemaphore(named_sem);
     }
+
+    closeNamedSemaphore(named_sem);
+    unlinkNamedSemaphore(named_sem);
 }
  
 int main(int argc, char **argv) {

@@ -7,6 +7,8 @@
 #include <getopt.h>
 #include <unistd.h>
 #include <time.h>
+#include <fcntl.h>
+#include <semaphore.h>
 
   
 /* 
@@ -17,6 +19,18 @@
  */
 #define SHM_SIZE 4096 
 
+/*
+ * Name of the semaphore used to sync the writing to the shm
+ * Creation and closing the semaphore is dealt with in the server
+ */
+#define SERVER_SEM_NAME "/chained_hash_table.sem"
+
+/*
+ * Name of the semaphore used to sync the writing to the shm
+ * Creation and closing the semaphore is dealt with in the server
+ */
+#define CLIENT_SEM_NAME "/chained_hash_table.sem"
+
 void printUsageAndExit(char *executable) {
     fprintf(stderr, "Usage: %s --import -k <key> -v <value>\n", executable);
     fprintf(stderr, "%s --get -k <key>\n", executable);
@@ -24,6 +38,31 @@ void printUsageAndExit(char *executable) {
     exit(EXIT_FAILURE);
 }
   
+void writeToServer(char *shm, char *cmd, size_t cmd_length) {
+    // open the named semaphore to synchronize correctly
+    // sem_open will create the sempaphore in case it does not exist, 
+    // but this should not happen if the client is already run
+    sem_t *server_named_sem = sem_open(SERVER_SEM_NAME, O_CREAT, S_IRUSR | S_IWUSR, 1);
+    if (server_named_sem == SEM_FAILED) {
+        perror("ATTENTION: Client cannot open the named semaphore!");
+        exit(EXIT_FAILURE);
+    }
+
+    // Wait on the named semaphore created by the server
+    if (sem_wait(server_named_sem) == -1) {
+        perror("ATTENTION: Error executiong sem_wait on the named server semaphore");
+        exit(EXIT_FAILURE);
+    }
+    memcpy(shm, cmd, cmd_length);
+    // Releasing the semaphore is done in the server, once the operation is completed
+    
+    // Close the named semaphore
+    if (sem_close(server_named_sem) == -1) {
+        perror("ATTENTION: Error when closing the named server semaphore!");
+        exit(EXIT_FAILURE);
+    }
+}
+
 int main(int argc, char **argv) {
     int isInsert = 0;
     int isGet = 0;
@@ -63,6 +102,7 @@ int main(int argc, char **argv) {
             case 'h':
                 printUsageAndExit(argv[0]);
         }
+        // TODO: Add shutdown
     }
 
     if(isInsert + isGet + isDelete < 1) {
@@ -125,7 +165,8 @@ int main(int argc, char **argv) {
         strcat(cmd, "\n");
         strcat(cmd, value);
 
-        memcpy(shm, cmd, cmd_length);
+        writeToServer(shm, cmd, cmd_length);
+
         fprintf(stdout, "CMD: %s", cmd);
     } else if(isGet) {
         //composing the command in the form
@@ -138,7 +179,7 @@ int main(int argc, char **argv) {
         strcat(cmd, "\ng\n");
         strcat(cmd, key);
 
-        memcpy(shm, cmd, cmd_length);
+        writeToServer(shm, cmd, cmd_length);
 
         fprintf(stdout, "CMD: %s", cmd);
     } else {
@@ -152,7 +193,7 @@ int main(int argc, char **argv) {
         strcat(cmd, "\nd\n");
         strcat(cmd, key);
 
-        memcpy(shm, cmd, cmd_length);
+        writeToServer(shm, cmd, cmd_length);
 
         fprintf(stdout, "CMD: %s", cmd);
     }
