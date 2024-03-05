@@ -25,7 +25,7 @@ Enqueues requests/operations (insert, read, delete) to the server (that will ope
 
 ## Requirements
 
-* Linux kernel (sync). Alternatively, Darwin can be used (not tested)
+* Linux kernel. Alternatively, Darwin can be used.
 * GCC compiler
 
 ## How to run
@@ -65,6 +65,6 @@ Enqueues requests/operations (insert, read, delete) to the server (that will ope
         ```
 
 ## OS Tests
-1. WSL (Windows 11) using the same gcc as the one in setup
-2. Linux Kernel (Ubuntu 22.04.4 LTS) using the same gcc as the one in setup
-3. Darwin (macOS Sonoma 14.3.1 with M2 Max) -> using the same gcc command as the one in the setup, but without the option lrt
+1. WSL (Windows 11) using the same gcc command as the one in setup
+2. Linux Kernel (Ubuntu 22.04.4 LTS) using the same gcc command as the one in setup
+3. Darwin (macOS Sonoma 14.3.1 with M2 Max) -> using the same gcc command as the one in the setup, but without the option -lrt
