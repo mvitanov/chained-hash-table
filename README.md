@@ -58,3 +58,13 @@ Enqueues requests/operations (insert, read, delete) to the server (that will ope
         ```bash
         ./client -g --key <key>
         ```
+
+    - Operation to shutdown the server
+        ```bash
+        ./client --shutdown
+        ```
+
+## OS Tests
+1. WSL (Windows 11) using the same gcc as the one in setup
+2. Linux Kernel (Ubuntu 22.04.4 LTS) using the same gcc as the one in setup
+3. Darwin (macOS Sonoma 14.3.1 with M2 Max) -> using the same gcc command as the one in the setup, but without the option lrt

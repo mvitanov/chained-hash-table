@@ -482,7 +482,7 @@ int main(int argc, char **argv) {
     /*
      * Shared memory segment at 3723909
      */
-    key_t shm_key = 37239092;
+    key_t shm_key = 3723909;
   
     
     if ((shm_id = shmget(shm_key, SHM_SIZE, IPC_CREAT | 0644)) < 0) {

@@ -127,14 +127,14 @@ int main(int argc, char **argv) {
 
     // used for random number generation, seeding with time and process pid to avoid collisions
     srand((unsigned int) (getpid() * time(NULL)));
-    // buffer for the random identifier that will be generated in the critical section
+    // buffer for the random identifier
     char random_identifier[16];
     sprintf(random_identifier, "%d", rand());
   
     /*
      * We need to get the segment named "3723909", created by the server.
      */
-    key_t shm_key = 37239092;
+    key_t shm_key = 3723909;
   
     if ((shm_id = shmget(shm_key, SHM_SIZE, 0644)) < 0) {
         fprintf(stderr, "Could not locate the shared memory segment for key %d!\n", shm_key);
