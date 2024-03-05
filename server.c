@@ -50,7 +50,7 @@ struct ChainedHashTable {
  * Hash function for handling integer keys
  */
 int hashInt(int* key, size_t size) {
-    // TODO: make it better 
+    // trivial hash functions for integers
     return *key % size;
 }
 
@@ -58,7 +58,7 @@ int hashInt(int* key, size_t size) {
  * Hash function for handling string keys
  */
 int hashString(char* key, size_t size) {
-    // TODO: make it better 
+    // trivial hash functions for strings
     int hash = 0;
     while(*key != '\0') {
         hash = (hash * 31) + *key;
@@ -345,17 +345,28 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
     // in case there is something in the shared memory in the beginning -> ignore it
     char previous_content[SHM_SIZE];
     strcpy(previous_content, shm);
-  
+
+    // make sure previously shutdown server does not affect the loop
+    if(memcmp(shm, "q\n", 3) == 0) {
+        *shm = 's';
+    }
+
     while (*shm != 'q'){
+        char *cmdBegin = shm;
+        // skip previously shutdown cmd
+        if(memcmp(shm, "s\n", 3) == 0) {
+            cmdBegin = memchr(shm, '\n', 3);
+            strcpy(previous_content, cmdBegin);
+        }
         //sleep(1);
-        if(strcmp(shm, previous_content) == 0) {
+        if(strcmp(cmdBegin, previous_content) == 0) {
             // nothing is written in the shm by client
             continue;
         }
-        strcpy(previous_content, shm);
+        strcpy(previous_content, cmdBegin);
 
         // skip the dummy random number
-        char *cmd = strchr(shm, '\n');
+        char *cmd = strchr(cmdBegin, '\n');
         if(cmd == NULL) {
             fprintf(stderr, "Invalid command: %s", shm);
             continue;
@@ -406,7 +417,7 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
             // fprintf(stdout, "valueLength: %lu\n", strlen(value));
 
             insert(cht, key, value, key_size, strlen(value) + 1);
-            sleep(5);
+            //sleep(5);
             free(key);
         } else if (strcmp(operation, "g") == 0 || strcmp(operation, "d") == 0) {
             // retrieve key
@@ -448,6 +459,7 @@ void startListening(struct ChainedHashTable* cht, char* shm) {
 
         /* Comment out for debugging */
         printHashTable(cht);
+        // fprintf(stdout, "CMD: %s", shm);
 
         free(operation);
         releaseNamedSemaphore(named_sem);

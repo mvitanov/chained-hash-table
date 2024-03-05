@@ -25,16 +25,11 @@
  */
 #define SERVER_SEM_NAME "/chained_hash_table.sem"
 
-/*
- * Name of the semaphore used to sync the writing to the shm
- * Creation and closing the semaphore is dealt with in the server
- */
-#define CLIENT_SEM_NAME "/chained_hash_table.sem"
-
 void printUsageAndExit(char *executable) {
     fprintf(stderr, "Usage: %s --import -k <key> -v <value>\n", executable);
     fprintf(stderr, "%s --get -k <key>\n", executable);
     fprintf(stderr, "%s --delete -k <key>\n", executable);
+    fprintf(stderr, "%s --shutdown\n", executable);
     exit(EXIT_FAILURE);
 }
   
@@ -67,6 +62,7 @@ int main(int argc, char **argv) {
     int isInsert = 0;
     int isGet = 0;
     int isDelete = 0;
+    int shutDown = 0;
     char *key = NULL;
     char *value = NULL;
 
@@ -78,6 +74,7 @@ int main(int argc, char **argv) {
         {"delete", no_argument, NULL, 'd'},
         {"key", required_argument, NULL, 'k'},
         {"value", optional_argument, NULL, 'v'},
+        {"shutdown", no_argument, NULL, 's'},
         {"help", no_argument, NULL, 'h'},
         {NULL, 0, NULL, 0}
     };
@@ -99,26 +96,28 @@ int main(int argc, char **argv) {
             case 'v':
                 value = optarg;
                 break;
+            case 's':
+                shutDown = 1;
+                break;
             case 'h':
                 printUsageAndExit(argv[0]);
         }
-        // TODO: Add shutdown
     }
 
-    if(isInsert + isGet + isDelete < 1) {
+    if(isInsert + isGet + isDelete + shutDown < 1) {
         fprintf(stderr, "At least one of the arguments -i (--import), -g (--get) or -d (--delete) must be specified!");
         printUsageAndExit(argv[0]);
-    } else if(isInsert + isGet + isDelete > 1) {
+    } else if(isInsert + isGet + isDelete + shutDown > 1) {
         fprintf(stderr, "Only one of the arguments -i (--import), -g (--get) or -d (--delete) must be specified!");
         printUsageAndExit(argv[0]);
     }
 
-    if(key == NULL) {
+    if(!shutDown && key == NULL) {
         fprintf(stderr, "Key parameter is required!\n");
         printUsageAndExit(argv[0]);
     }
 
-    if(isInsert == 1 && value == NULL) {
+    if(!shutDown && isInsert && value == NULL) {
         fprintf(stderr, "Value parameter is required when insert operation is used!\n");
         printUsageAndExit(argv[0]);
     }
@@ -126,9 +125,9 @@ int main(int argc, char **argv) {
     int shm_id;
     char *shm;
 
-    // used for random number generation
-    srand((unsigned int)time(NULL));
-    // TODO: rand generation should happen in a locked state to avoid collisions
+    // used for random number generation, seeding with time and process pid to avoid collisions
+    srand((unsigned int) (getpid() * time(NULL)));
+    // buffer for the random identifier that will be generated in the critical section
     char random_identifier[16];
     sprintf(random_identifier, "%d", rand());
   
@@ -153,7 +152,7 @@ int main(int argc, char **argv) {
     size_t cmd_length = strlen(random_identifier) + 1; // + newline
     // cmd regex: [igd]\nkey(\nvalue)?
     if(isInsert) {
-        //composing the command in the form
+        // composing the command in the form
         // i\nkey\nvalue
         // size is 1 cmd_letter + 1 newline + size of key + 1 newline + size of value + 1 terminal char
         cmd_length += 4 * sizeof(char) + strlen(key) + strlen(value);
@@ -182,7 +181,7 @@ int main(int argc, char **argv) {
         writeToServer(shm, cmd, cmd_length);
 
         fprintf(stdout, "CMD: %s", cmd);
-    } else {
+    } else if(isDelete) {
         //composing the command in the form
         // d\nkey
         // size is 1 char cmd_letter + 1 char newline + size of key + 1 terminal char
@@ -196,6 +195,12 @@ int main(int argc, char **argv) {
         writeToServer(shm, cmd, cmd_length);
 
         fprintf(stdout, "CMD: %s", cmd);
+    } else {
+        char *cmd = "q\n";
+        cmd_length = strlen(cmd) + 1;
+        writeToServer(shm, cmd, cmd_length);
+
+        printf("CMD: Shutdown Server\n");
     }
   
     if(shmdt(shm) != 0) {
